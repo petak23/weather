@@ -113,23 +113,22 @@ void loop() {
     }
 
     // Computes temperature values in Celsius
-    float hic = dht.computeHeatIndex(t, h, false);
+    //float hic = dht.computeHeatIndex(t, h, false);
     static char temperatureTemp[7];
-    dtostrf(hic, 6, 2, temperatureTemp);
+    dtostrf(t, 6, 2, temperatureTemp);
     
     static char humidityTemp[7];
     dtostrf(h, 6, 2, humidityTemp);
 
     // Publishes Temperature and Humidity values
-    mqttClient.publish(topic_temperature, 1, true, String(temperatureTemp).c_str());
-    mqttClient.publish(topic_humidity, 1, true, String(humidityTemp).c_str());
-    
-    Serial.print("Vlhkosť: ");
-    Serial.print(h);
-    Serial.print("% | Teplota: ");
-    Serial.print(t);
-    Serial.print("°C | Tepelný index: ");
-    Serial.print(hic);
-    Serial.println("°C ");
+    //uint16_t packetIdPub1 = 
+    mqttClient.publish(topic_temperature, 0, true, String(t).c_str());                            
+    //Serial.printf("Publishing on topic %s at QoS 0, packetId: %i ", topic_temperature, packetIdPub1);
+    //Serial.printf("Teplota: %s°C \n", temperatureTemp);
+
+    //uint16_t packetIdPub2 = 
+    mqttClient.publish(topic_humidity, 0, true, String(h).c_str());                            
+    //Serial.printf("Publishing on topic %s at QoS 0, packetId: %i ", topic_humidity, packetIdPub2);
+    //Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
   }
 }
