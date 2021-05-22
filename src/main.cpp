@@ -2,29 +2,31 @@
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledna zmena(last change): 30.11.2020
+ * Posledna zmena(last change): 22.05.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
- * @copyright  Copyright (c) 2016 - 2020 Ing. Peter VOJTECH ml.
+ * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.0.1
+ * @version 1.0.2
  */
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <WiFiClient.h>
-#include <PubSubClient.h>
+#include <Ticker.h>
+#include <AsyncMqttClient.h>
 #include "DHT.h"
 #include "definitions.h"
 
-// Uncomment one of the lines bellow for whatever DHT sensor type you're using!
-//#define DHTTYPE DHT11   // DHT 11
-//#define DHTTYPE DHT21   // DHT 21 (AM2301)
 #define DHTTYPE DHT22   // DHT 22  (AM2302), AM2321
 
-// Initializes the espClient. You should change the espClient name if you have multiple ESPs running in your home automation system
-WiFiClient espClient;
-PubSubClient client(espClient);
+AsyncMqttClient mqttClient;
+Ticker mqttReconnectTimer;
+
+WiFiEventHandler wifiConnectHandler;
+WiFiEventHandler wifiDisconnectHandler;
+Ticker wifiReconnectTimer;
+
 
 // DHT Sensor - GPIO 5 = D1 on ESP-12E NodeMCU board
 const int DHTPin = 5;
@@ -36,53 +38,38 @@ DHT dht(DHTPin, DHTTYPE);
 long now = millis();
 long lastMeasure = 0;
 
-// Don't change the function below. This functions connects your ESP8266 to your router
-void setup_wifi() {
-  delay(10);
-  // We start by connecting to a WiFi network
-  Serial.println();
-  Serial.print("Connecting to ");
-  Serial.println(ssid);
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.println("");
-  Serial.print("WiFi connected - ESP IP address: ");
-  Serial.println(WiFi.localIP());
+void connectToWifi() {
+  Serial.println("Connecting to Wi-Fi...");
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
-// This functions is executed when some device publishes a message to a topic that your ESP8266 is subscribed to
-// Change the function below to add logic to your program, so when a device publishes a message to a topic that 
-// your ESP8266 is subscribed you can actually do something
-void callback(String topic, byte* message, unsigned int length) {
-  String messageTemp;
-  for (unsigned int i = 0; i < length; i++) {
-    messageTemp += (char)message[i];
-  }
+void connectToMqtt() {
+  Serial.println("Connecting to MQTT...");
+  mqttClient.connect();
 }
 
-// This functions reconnects your ESP8266 to your MQTT broker
-// Change the function below if you want to subscribe to more topics with your ESP8266 
-void reconnect() {
-  // Loop until we're reconnected
-  while (!client.connected()) {
-    Serial.print("Attempting MQTT connection...");
-    // Attempt to connect
+void onWifiConnect(const WiFiEventStationModeGotIP& event) {
+  Serial.println("Connected to Wi-Fi.");
+  connectToMqtt();
+}
 
-    if (client.connect(mqtt_client, mqtt_broker, mqtt_password)) {
-      Serial.println("connected");  
-      // Subscribe or resubscribe to a topic
-      // You can subscribe to more topics (to control more LEDs in this example)
-      // client.subscribe("room/lamp");
-    } else {
-      Serial.print("failed, rc=");
-      Serial.print(client.state());
-      Serial.println(" try again in 5 seconds");
-      // Wait 5 seconds before retrying
-      delay(5000);
-    }
+void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
+  Serial.println("Disconnected from Wi-Fi.");
+  mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
+  wifiReconnectTimer.once(2, connectToWifi);
+}
+
+void onMqttConnect(bool sessionPresent) {
+  Serial.println("Connected to MQTT.");
+  Serial.print("Session present: ");
+  Serial.println(sessionPresent);
+}
+
+void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
+  Serial.println("Disconnected from MQTT.");
+
+  if (WiFi.isConnected()) {
+    mqttReconnectTimer.once(2, connectToMqtt);
   }
 }
 
@@ -90,24 +77,25 @@ void reconnect() {
 // Sets your mqtt broker and sets the callback function
 // The callback function is what receives messages and actually controls the LEDs
 void setup() {
- 
+
   dht.begin();
   
   Serial.begin(115200);
-  setup_wifi();
-  client.setServer(mqtt_server, 1883);
-  client.setCallback(callback);
+
+  wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
+  wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
+  
+  mqttClient.onConnect(onMqttConnect);
+  mqttClient.onDisconnect(onMqttDisconnect);
+  
+  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
+  mqttClient.setCredentials(MQTT_USER, MQTT_PASSWORD);
+  connectToWifi();
 
 }
 
 // For this project, you don't need to change anything in the loop function. Basically it ensures that you ESP is connected to your broker
 void loop() {
-
-  if (!client.connected()) {
-    reconnect();
-  }
-  if(!client.loop())
-    client.connect(mqtt_client, mqtt_broker, mqtt_password);
 
   now = millis();
   // Publishes new temperature and humidity every 15 seconds
@@ -133,8 +121,8 @@ void loop() {
     dtostrf(h, 6, 2, humidityTemp);
 
     // Publishes Temperature and Humidity values
-    client.publish("room/temperature", temperatureTemp);
-    client.publish("room/humidity", humidityTemp);
+    uint16_t packetIdPub1 = mqttClient.publish(topic_temperature, 1, true, String(temperatureTemp).c_str());
+    uint16_t packetIdPub2 = mqttClient.publish(topic_humidity, 1, true, String(humidityTemp).c_str());
     
     Serial.print("Vlhkosť: ");
     Serial.print(h);
