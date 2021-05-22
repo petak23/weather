@@ -121,8 +121,8 @@ void loop() {
     dtostrf(h, 6, 2, humidityTemp);
 
     // Publishes Temperature and Humidity values
-    uint16_t packetIdPub1 = mqttClient.publish(topic_temperature, 1, true, String(temperatureTemp).c_str());
-    uint16_t packetIdPub2 = mqttClient.publish(topic_humidity, 1, true, String(humidityTemp).c_str());
+    mqttClient.publish(topic_temperature, 1, true, String(temperatureTemp).c_str());
+    mqttClient.publish(topic_humidity, 1, true, String(humidityTemp).c_str());
     
     Serial.print("Vlhkosť: ");
     Serial.print(h);
