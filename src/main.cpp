@@ -2,16 +2,21 @@
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledna zmena(last change): 22.05.2021
+ * Posledna zmena(last change): 25.05.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.0.2
+ * @version 1.0.3
  */
 
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
+#include <ESPAsyncTCP.h>
+#include <ESPAsyncWebServer.h>
+#include <AsyncElegantOTA.h>
+#include "LittleFS.h"
+#include <Arduino_JSON.h>
 #include <WiFiClient.h>
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
@@ -27,6 +32,7 @@ WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
 
+AsyncWebServer server(80);
 
 // DHT Sensor - GPIO 5 = D1 on ESP-12E NodeMCU board
 const int DHTPin = 5;
@@ -37,6 +43,14 @@ DHT dht(DHTPin, DHTTYPE);
 // Timers auxiliar variables
 long now = millis();
 long lastMeasure = 0;
+
+// Initialize LittleFS
+void initLittleFS() {
+  if (!LittleFS.begin()) {
+    Serial.println("An error has occurred while mounting LittleFS");
+  }
+  Serial.println("LittleFS mounted successfully");
+}
 
 void connectToWifi() {
   Serial.println("Connecting to Wi-Fi...");
@@ -50,6 +64,8 @@ void connectToMqtt() {
 
 void onWifiConnect(const WiFiEventStationModeGotIP& event) {
   Serial.println("Connected to Wi-Fi.");
+  Serial.print("IP address: ");
+  Serial.println(WiFi.localIP());
   connectToMqtt();
 }
 
@@ -80,6 +96,8 @@ void setup() {
 
   dht.begin();
   
+  initLittleFS();
+
   Serial.begin(115200);
 
   wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
@@ -92,10 +110,21 @@ void setup() {
   mqttClient.setCredentials(MQTT_USER, MQTT_PASSWORD);
   connectToWifi();
 
+  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+    request->send(LittleFS, "/index.html", "text/html",false);
+  });
+
+  server.serveStatic("/", LittleFS, "/");
+
+  AsyncElegantOTA.begin(&server, OTA_USER, OTA_PASSWORD); // Štart ElegantOTA s autentifikáciou https://github.com/ayushsharma82/AsyncElegantOTA
+  server.begin();                                         // Start server
+  Serial.println("HTTP server started");
 }
 
 // For this project, you don't need to change anything in the loop function. Basically it ensures that you ESP is connected to your broker
 void loop() {
+
+  AsyncElegantOTA.loop();
 
   now = millis();
   // Publishes new temperature and humidity every 15 seconds

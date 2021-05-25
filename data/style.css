@@ -1,0 +1,32 @@
+html {
+  font-family: Arial, Helvetica, sans-serif; 
+  text-align: center;
+}
+h1 {
+  font-size: 1.8rem; 
+  color: #fff;
+}
+.topnav { 
+  overflow: hidden; 
+  background-color: #0A1128;
+}
+.update-link {
+  color: #fff;
+  position: absolute;
+  top: 1.8rem;
+  right: 1rem;
+}
+body {  
+  margin: 0;
+}
+.content { 
+  padding: 2rem;
+  min-height: 5rem;
+}
+
+footer {
+  background-color: #0A1128;
+  color: #fff;
+  padding: .5rem;
+  font-size: 80%;
+}
