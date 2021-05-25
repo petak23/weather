@@ -5,7 +5,7 @@
 ```c
 
 #define WIFI_SSID "my-ssid-name"
-#define WIFI_PASSWORD "my-extra-stronf-password"    
+#define WIFI_PASSWORD "my-extra-strong-password"    
 #define WIFI_HOST "my-host-name"   
 ```
 
@@ -31,4 +31,17 @@
 
 ```c
 const char* main_topic = "main/topic/";
+```
+
+## Senzory
+
+```c
+#define DHTTYPE DHT22   // Definovanie typov pripojených senzorov
+#define DHTPIN 5        // Pin, na ktorý je pripojený senzor
+```
+
+## Ostaté konštanty
+
+```c
+#define PUBLISH_TIME 15000 // Perioda publikácie nameraných dát. (15000/1000)sec.
 ```
