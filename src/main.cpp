@@ -30,6 +30,10 @@ WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
 Ticker wifiReconnectTimer;
 
+int mqtt_state = 0;          // Stav MQTT pripojenia podľa https://pubsubclient.knolleary.net/api#state
+float humidity = 0;
+float temperature = 0;
+
 AsyncWebServer server(80);
 
 // Initialize DHT sensor.
@@ -45,6 +49,29 @@ void initLittleFS() {
     Serial.println("An error has occurred while mounting LittleFS");
   }
   Serial.println("LittleFS mounted successfully");
+}
+
+// Create a WebSocket object
+AsyncWebSocket ws("/ws");
+
+String getOutputStates(){
+  JSONVar myArray;
+  myArray["mqtt"] = String(mqtt_state);
+  
+  static char temperatureTemp[7];
+  dtostrf(temperature, 6, 2, temperatureTemp);
+  static char humidityTemp[7];
+  dtostrf(humidity, 6, 2, humidityTemp);                           
+
+  myArray["humidity"] = humidityTemp;
+  myArray["temperature"] = temperatureTemp;
+
+  String jsonString = JSON.stringify(myArray);
+  return jsonString;
+}
+
+void notifyClients(String state) {
+  ws.textAll(state);
 }
 
 void connectToWifi() {
@@ -71,6 +98,8 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
 }
 
 void onMqttConnect(bool sessionPresent) {
+  mqtt_state = 1;                   // Nastav príznak MQTT spojenia
+  notifyClients(getOutputStates()); // Aktualizuj stavy webu
   Serial.println("Connected to MQTT.");
   Serial.print("Session present: ");
   Serial.println(sessionPresent);
@@ -78,10 +107,34 @@ void onMqttConnect(bool sessionPresent) {
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   Serial.println("Disconnected from MQTT.");
-
+  mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
+  notifyClients(getOutputStates()); // Aktualizuj stavy webu
   if (WiFi.isConnected()) {
     mqttReconnectTimer.once(2, connectToMqtt);
   }
+}
+
+void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,AwsEventType type,
+             void *arg, uint8_t *data, size_t len) {
+  switch (type) {
+    case WS_EVT_CONNECT:
+      //Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      break;
+    case WS_EVT_DISCONNECT:
+      //Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      break;
+    case WS_EVT_DATA:
+      //handleWebSocketMessage(arg, data, len);
+      break;
+    case WS_EVT_PONG:
+    case WS_EVT_ERROR:
+      break;
+  }
+}
+
+void initWebSocket() {
+  ws.onEvent(onEvent);
+  server.addHandler(&ws);
 }
 
 void setup() {
@@ -89,6 +142,7 @@ void setup() {
   dht.begin();
   
   initLittleFS();
+  initWebSocket();
 
   Serial.begin(115200);
 
@@ -111,36 +165,38 @@ void setup() {
   AsyncElegantOTA.begin(&server, OTA_USER, OTA_PASSWORD); // Štart ElegantOTA s autentifikáciou https://github.com/ayushsharma82/AsyncElegantOTA
   server.begin();                                         // Start server
   Serial.println("HTTP server started");
+  notifyClients(getOutputStates());       // Updatuj web
 }
 
 void loop() {
 
   AsyncElegantOTA.loop();
+  ws.cleanupClients();
 
   now = millis();
   // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
   if (now - lastMeasure > PUBLISH_TIME) {
     lastMeasure = now;
 
-    float h = dht.readHumidity();    // Načítanie vlhkosti
-    float t = dht.readTemperature(); // Načítanie teploty v °C
+    humidity = dht.readHumidity();    // Načítanie vlhkosti
+    temperature = dht.readTemperature(); // Načítanie teploty v °C
 
-    if (isnan(h) || isnan(t)) { // Kontrola načítania dát zo senzora
+    static char temperatureTemp[7];
+    dtostrf(temperature, 6, 2, temperatureTemp);
+    static char humidityTemp[7];
+    dtostrf(humidity, 6, 2, humidityTemp);                           
+    Serial.printf("Teplota: %s°C \n", temperatureTemp);
+    Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
+
+    if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
       Serial.println("Failed to read from DHT sensor!");
       return;
     }
 
     // Publikácia načítaných hodnôt 
-    mqttClient.publish(topic_temperature, 0, true, String(t).c_str());
-    mqttClient.publish(topic_humidity, 0, true, String(h).c_str()); 
-
-    // Computes temperature values in Celsius
-    //float hic = dht.computeHeatIndex(t, h, false);
-    //static char temperatureTemp[7];
-    //dtostrf(t, 6, 2, temperatureTemp);
-    //static char humidityTemp[7];
-    //dtostrf(h, 6, 2, humidityTemp);                           
-    //Serial.printf("Teplota: %s°C \n", temperatureTemp);
-    //Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
+    mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
+    mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
+    notifyClients(getOutputStates());       // Updatuj web
+    
   }
 }

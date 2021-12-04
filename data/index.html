@@ -1,26 +1,57 @@
-<!DOCTYPE HTML><html>
+<!DOCTYPE HTML>
+<html class="h-100">
 <head>
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
   <meta charset="utf-8">
   <title>ESP8266 IoT - WEATHER</title>
+  <link rel="stylesheet" type="text/css" href="bootstrap.min.css">
   <link rel="stylesheet" type="text/css" href="style.css">
   <link rel="icon"  type="image/png" href="favicon.ico">
   <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.7.2/css/all.css" integrity="sha384-fnmOCqbTlWIlj8LyTjo7mOUStjsKC4pOpQbqyi7RrhN7udi9RwhKkMHpvLbHG9Sr" crossorigin="anonymous">
 </head>
-<body>
-  <div class="topnav">
-    <h1>Počasie s ESP8266</h1>
-    <a href="/update" class="update-link">Update firmware</a>
-  </div>
-
-  <div class="content">
+<body class="d-flex h-100 text-center text-white bg-dark">
     
-  </div>
+  <div class="cover-container d-flex w-100 h-100 p-3 mx-auto flex-column">
+    <header class="mb-auto mx-auto header">
+      <div>
+        <h3 class="float-md-start mb-0">Počasie s ESP8266</h3>
+        <nav class="nav nav-masthead justify-content-center float-md-end">
+          <a class="nav-link active" aria-current="page" href="/update">Update firmware</a>
+          <!--a class="nav-link" href="#">Features</a>
+          <a class="nav-link" href="#">Contact</a-->
+        </nav>
+      </div>
+    </header>
+
+    <div class="row status-bar">
+      <div id="mqtt" class="col-12 alert ">
+        MQTT ???
+      </div>
+    </div>
   
-  <footer>
-    <p>(c) PV 2021 - ESP 8266 WEB SERVER </p>
-  </footer>
+    <main class="px-3 bg-primary bg-gradient">
+      
+
+      <h1>Teplota a vlhkosť.</h1>
+      <!-- p class="lead"> </p>
+      <p class="lead">
+        <a href="#" class="btn btn-lg btn-secondary fw-bold border-white bg-white">Learn more</a>
+      </p -->
+      <div class="row align-items-center py-5 content">
+        <div class="col-12 col-sm-6 temperature">
+          Teplota je: <span id="temperature">__,__</span>°C
+        </div>
+        <div class="col-12 col-sm-6 humidity">
+          Vlhkosť je: <span id="humidity">__,__</span>%
+        </div>
+      </div>
+    </main>
+  
+    <footer class="mt-auto mx-auto text-white-50">
+      <p>(c) PV 2021 - ESP 8266 WEB SERVER | <a href="https://getbootstrap.com/" class="text-white">Bootstrap</a></p>
+    </footer>
+  </div>
   <script src="/script.js"></script>
 </body>
 </html>
