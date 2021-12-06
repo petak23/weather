@@ -21,7 +21,10 @@
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
 #include "DHT.h"
+#include "Tasker.h"
 #include "definitions.h"
+
+
 
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
@@ -38,6 +41,8 @@ AsyncWebServer server(80);
 
 // Initialize DHT sensor.
 DHT dht(DHTPIN, DHTTYPE);
+
+Tasker tasker;
 
 // Timers auxiliar variables
 long now = millis();
