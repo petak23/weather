@@ -30,7 +30,8 @@
 ## Topic
 
 ```c
-const char* main_topic = "main/topic/";
+const char* topic_temperature = "weather/temperature"; 
+const char* topic_humidity = "weather/humidity"; 
 ```
 
 ## Senzory
@@ -44,4 +45,5 @@ const char* main_topic = "main/topic/";
 
 ```c
 #define PUBLISH_TIME 15000 // Perioda publikácie nameraných dát. (15000/1000)sec.
+#define SERIAL_PORT_ENABLED true  // Povolenie výstupu na sériový port - logovanie
 ```

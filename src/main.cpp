@@ -1,15 +1,3 @@
-
-/* 
- * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
- *
- * Posledná zmena(last change): 25.05.2021
- * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
- * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
- * @license
- * @link       http://petak23.echo-msz.eu
- * @version 1.0.3
- */
-
 #include <Arduino.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
@@ -24,7 +12,16 @@
 #include "Tasker.h"
 #include "definitions.h"
 
-
+/* 
+ * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
+ *
+ * Posledná zmena(last change): 06.12.2021
+ * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
+ * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
+ * @license
+ * @link       http://petak23.echo-msz.eu
+ * @version 1.0.4
+ */
 
 AsyncMqttClient mqttClient;
 Ticker mqttReconnectTimer;
@@ -44,16 +41,17 @@ DHT dht(DHTPIN, DHTTYPE);
 
 Tasker tasker;
 
-// Timers auxiliar variables
-long now = millis();
-long lastMeasure = 0;
-
 // Initialize LittleFS
 void initLittleFS() {
-  if (!LittleFS.begin()) {
-    Serial.println("An error has occurred while mounting LittleFS");
-  }
-  Serial.println("LittleFS mounted successfully");
+  
+  #if SERIAL_PORT_ENABLED
+    if (!LittleFS.begin()) {
+      Serial.println("An error has occurred while mounting LittleFS");
+    }
+    Serial.println("LittleFS mounted successfully");
+  #else
+    LittleFS.begin();
+  #endif
 }
 
 // Create a WebSocket object
@@ -80,24 +78,32 @@ void notifyClients(String state) {
 }
 
 void connectToWifi() {
-  Serial.println("Connecting to Wi-Fi...");
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Connecting to Wi-Fi...");
+  #endif
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
 }
 
 void connectToMqtt() {
-  Serial.println("Connecting to MQTT...");
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Connecting to MQTT...");
+  #endif
   mqttClient.connect();
 }
 
 void onWifiConnect(const WiFiEventStationModeGotIP& event) {
-  Serial.println("Connected to Wi-Fi.");
-  Serial.print("IP address: ");
-  Serial.println(WiFi.localIP());
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Connected to Wi-Fi.");
+    Serial.print("IP address: ");
+    Serial.println(WiFi.localIP());
+  #endif
   connectToMqtt();
 }
 
 void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
-  Serial.println("Disconnected from Wi-Fi.");
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Disconnected from Wi-Fi.");
+  #endif
   mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
   wifiReconnectTimer.once(2, connectToWifi);
 }
@@ -105,13 +111,17 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
 void onMqttConnect(bool sessionPresent) {
   mqtt_state = 1;                   // Nastav príznak MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
-  Serial.println("Connected to MQTT.");
-  Serial.print("Session present: ");
-  Serial.println(sessionPresent);
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Connected to MQTT.");
+    Serial.print("Session present: ");
+    Serial.println(sessionPresent);
+  #endif
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  Serial.println("Disconnected from MQTT.");
+  #if SERIAL_PORT_ENABLED
+    Serial.println("Disconnected from MQTT.");
+  #endif
   mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
   if (WiFi.isConnected()) {
@@ -142,6 +152,34 @@ void initWebSocket() {
   server.addHandler(&ws);
 }
 
+void taskReadDHT() {
+  //Nacitaj udaje z DHT
+  humidity = dht.readHumidity();    // Načítanie vlhkosti
+  temperature = dht.readTemperature(); // Načítanie teploty v °C
+
+  #if SERIAL_PORT_ENABLED
+  // Výstup na sériový port
+    static char temperatureTemp[7];
+    dtostrf(temperature, 6, 2, temperatureTemp);
+    static char humidityTemp[7];
+    dtostrf(humidity, 6, 2, humidityTemp);                           
+    Serial.printf("Teplota: %s°C \n", temperatureTemp);
+    Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
+  #endif
+
+  if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
+    #if SERIAL_PORT_ENABLED
+      Serial.println("Failed to read from DHT sensor!");
+    #endif
+    return;
+  }
+
+  // Publikácia načítaných hodnôt 
+  mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
+  mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
+  notifyClients(getOutputStates());       // Updatuj web
+}
+
 void setup() {
 
   dht.begin();
@@ -149,7 +187,9 @@ void setup() {
   initLittleFS();
   initWebSocket();
 
-  Serial.begin(115200);
+  #if SERIAL_PORT_ENABLED
+    Serial.begin(115200);
+  #endif
 
   wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
   wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
@@ -169,39 +209,21 @@ void setup() {
 
   AsyncElegantOTA.begin(&server, OTA_USER, OTA_PASSWORD); // Štart ElegantOTA s autentifikáciou https://github.com/ayushsharma82/AsyncElegantOTA
   server.begin();                                         // Start server
-  Serial.println("HTTP server started");
+
+  #if SERIAL_PORT_ENABLED
+    Serial.println("HTTP server started");
+  #endif
+
+  // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
+  tasker.setInterval(taskReadDHT, PUBLISH_TIME);
+
   notifyClients(getOutputStates());       // Updatuj web
 }
 
 void loop() {
 
-  AsyncElegantOTA.loop();
   ws.cleanupClients();
 
-  now = millis();
-  // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
-  if (now - lastMeasure > PUBLISH_TIME) {
-    lastMeasure = now;
+  tasker.loop();
 
-    humidity = dht.readHumidity();    // Načítanie vlhkosti
-    temperature = dht.readTemperature(); // Načítanie teploty v °C
-
-    static char temperatureTemp[7];
-    dtostrf(temperature, 6, 2, temperatureTemp);
-    static char humidityTemp[7];
-    dtostrf(humidity, 6, 2, humidityTemp);                           
-    Serial.printf("Teplota: %s°C \n", temperatureTemp);
-    Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
-
-    if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
-      Serial.println("Failed to read from DHT sensor!");
-      return;
-    }
-
-    // Publikácia načítaných hodnôt 
-    mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
-    mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
-    notifyClients(getOutputStates());       // Updatuj web
-    
-  }
 }

@@ -4,7 +4,7 @@ Meteorologická stanica pomocou esp8266 a MQTT
 
 ## Špecifikácia
 
-Informácia o teplote a vlhkosti je publikovaná každých 15s.
+Informácia o teplote a vlhkosti je publikovaná každých 60s.
 
 **mqtt client name** = "ESP8266-weather"
 
