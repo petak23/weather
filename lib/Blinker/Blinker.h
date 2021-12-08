@@ -1,9 +1,20 @@
 #ifndef RA_BLINKER_H
 #define RA_BLINKER_H
 
+#include <Ticker.h>
 #include "Blinker.h"
 
 /**
+ * Prevzaté z: https://github.com/petrbrouzda/RatatoskrIoT
+ * 
+ * Posledná zmena(Last change): 08.12.2021
+ * 
+ * @authors Petr Brouzda <petr.brouzda@gmail.com>; Ing. Peter VOJTECH ml. <petak23@gmail.com>
+ * @copyright  Copyright (c) 2016 - 2021 Petr Brouzda, Ing. Peter VOJTECH ml.
+ * @license Apache License 2.0
+ * @link       http://petak23.echo-msz.eu
+ * @version 1.0.0
+ * 
  * raBlinker - zajistuje blikani LEDkou
  * 
  * Zalozim si objekt
