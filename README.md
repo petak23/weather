@@ -28,3 +28,4 @@ Informácia o teplote a vlhkosti je publikovaná každých 60s.
 
 - [ESP32 MQTT - Publish BME280 Sensor Readings (Arduino IDE)](https://randomnerdtutorials.com/esp8266-nodemcu-mqtt-publish-dht11-dht22-arduino/)
 - [ESP8266 NodeMCU OTA (Over-the-Air) Updates – AsyncElegantOTA (VS Code + PlatformIO)](https://randomnerdtutorials.com/esp8266-nodemcu-ota-over-the-air-vs-code/)
+- [RatatoskrIoT](https://github.com/petrbrouzda/RatatoskrIoT) alebo môj fork [petak23_RatatoskrIoT](https://github.com/petak23/RatatoskrIoT)
