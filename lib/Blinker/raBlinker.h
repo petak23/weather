@@ -2,7 +2,6 @@
 #define RA_BLINKER_H
 
 #include <Ticker.h>
-#include "Blinker.h"
 
 /**
  * Prevzaté z: https://github.com/petrbrouzda/RatatoskrIoT
@@ -40,10 +39,12 @@
  * -1 = konec (zablika jednou urcenou sekvenci a skonci)
  */
 
+
 class raBlinker
 {
   public:
     raBlinker( int pin );
+    void raBlinkerSetPin( int pin );
     void off();
     void setCode( int * code );
     void changeState();

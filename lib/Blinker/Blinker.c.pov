@@ -1,18 +1,21 @@
+
 /**
  * Popis v Blinker.h
  */
 
-raBlinker::raBlinker( int pin ) {
+void raBlinkerChangeStateBridge() {
+#ifdef USE_BLINKER
+  blinker.changeState();
+#endif
+}
+
+raBlinker::raBlinker( int pin )
+{
   this->pin = pin;
 }
 
-void raBlinkerChangeStateBridge() {
-  #ifdef USE_BLINKER
-    blinker.changeState();
-  #endif
-}
-
-void raBlinker::changeState() {
+void raBlinker::changeState()
+{
   if( this->code==NULL ) return;
 
   if( this->position == 0 && 
@@ -38,7 +41,8 @@ void raBlinker::changeState() {
   }
 }
 
-void raBlinker::off() {
+void raBlinker::off()
+{
   noInterrupts();
     this->code = NULL;
     this->position = 0;
@@ -49,7 +53,8 @@ void raBlinker::off() {
   digitalWrite( this->pin, BLINKER_LED_OFF );
 }
 
-void raBlinker::setCode( int * code ) {
+void raBlinker::setCode( int * code )
+{
   noInterrupts();
     this->code = code;
     this->position = 0;
@@ -57,4 +62,15 @@ void raBlinker::setCode( int * code ) {
   interrupts();
 
   this->changeState();
+
+  /*
+  Serial.print( "raBlinker.setCode( " );
+  int i = 0;
+  while( 1 ) {
+    Serial.printf( "%d ", code[i] );
+    if( code[i]==0 || code[i]==-1 ) break;
+    i++;
+  }
+  Serial.println( ")" );
+  */
 }

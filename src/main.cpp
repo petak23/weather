@@ -1,17 +1,4 @@
 #include <Arduino.h>
-#include <Blinker.h>
-#include <ESP8266WiFi.h>
-#include <ESPAsyncTCP.h>
-#include <ESPAsyncWebServer.h>
-#include <AsyncElegantOTA.h>
-#include "LittleFS.h"
-#include <Arduino_JSON.h>
-#include <WiFiClient.h>
-#include <Ticker.h>
-#include <AsyncMqttClient.h>
-#include "DHT.h"
-#include "Tasker.h"
-#include "definitions.h"
 
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
@@ -24,149 +11,62 @@
  * @version 1.0.4
  */
 
-AsyncMqttClient mqttClient;
-Ticker mqttReconnectTimer;
+//+++++ RatatoskrIoT +++++
 
-WiFiEventHandler wifiConnectHandler;
-WiFiEventHandler wifiDisconnectHandler;
-Ticker wifiReconnectTimer;
+  #include "AppConfig.h"
 
-int mqtt_state = 0;          // Stav MQTT pripojenia podľa https://pubsubclient.knolleary.net/api#state
+  // RA objects
+  ratatoskr* ra;
+  raLogger* logger;
+  raConfig config;
+  Tasker tasker;
+
+  // stav WiFi - je pripojena?
+  bool wifiOK = false;
+  // cas, kdy byla nastartovana wifi
+  long wifiStartTime = 0;
+  // duvod posledniho startu, naplni se automaticky
+  int wakeupReason;
+  // je aktualni start probuzenim z deep sleep?
+  bool deepSleepStart;
+
+  #ifdef RA_STORAGE_RTC_RAM 
+    RTC_DATA_ATTR unsigned char ra_storage[RA_STORAGE_SIZE];
+  #endif
+
+  #include <Blinker.h>
+
+  #ifdef USE_BLINKER
+    raBlinker blinker( BLINKER_PIN );
+    int blinkerPortal[] = BLINKER_MODE_PORTAL;
+    int blinkerSearching[]  = BLINKER_MODE_SEARCHING;
+    int blinkerRunning[] = BLINKER_MODE_RUNNING;
+    int blinkerRunningWifi[] = BLINKER_MODE_RUNNING_WIFI;;
+  #endif  
+
+//----- RatatoskrIoT ----
+
+#include "DHT.h"
+#include "definitions.h"
+
+
 float humidity = 0;
 float temperature = 0;
-
-AsyncWebServer server(80);
 
 // Initialize DHT sensor.
 DHT dht(DHTPIN, DHTTYPE);
 
-Tasker tasker;
+// ID kanalu pro posilani dat
+int ch1;
+int ch2;
 
-// Initialize LittleFS
-void initLittleFS() {
-  
-  #if SERIAL_PORT_ENABLED
-    if (!LittleFS.begin()) {
-      Serial.println("An error has occurred while mounting LittleFS");
-    }
-    Serial.println("LittleFS mounted successfully");
-  #else
-    LittleFS.begin();
-  #endif
-}
-
-// Create a WebSocket object
-AsyncWebSocket ws("/ws");
-
-String getOutputStates(){
-  JSONVar myArray;
-  myArray["mqtt"] = String(mqtt_state);
-  
-  static char temperatureTemp[7];
-  dtostrf(temperature, 6, 2, temperatureTemp);
-  static char humidityTemp[7];
-  dtostrf(humidity, 6, 2, humidityTemp);                           
-
-  myArray["humidity"] = humidityTemp;
-  myArray["temperature"] = temperatureTemp;
-
-  String jsonString = JSON.stringify(myArray);
-  return jsonString;
-}
-
-void notifyClients(String state) {
-  ws.textAll(state);
-}
-
-void connectToWifi() {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connecting to Wi-Fi...");
-  #endif
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-}
-
-void connectToMqtt() {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connecting to MQTT...");
-  #endif
-  mqttClient.connect();
-}
-
-void onWifiConnect(const WiFiEventStationModeGotIP& event) {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connected to Wi-Fi.");
-    Serial.print("IP address: ");
-    Serial.println(WiFi.localIP());
-  #endif
-  connectToMqtt();
-}
-
-void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Disconnected from Wi-Fi.");
-  #endif
-  mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-  wifiReconnectTimer.once(2, connectToWifi);
-}
-
-void onMqttConnect(bool sessionPresent) {
-  mqtt_state = 1;                   // Nastav príznak MQTT spojenia
-  notifyClients(getOutputStates()); // Aktualizuj stavy webu
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connected to MQTT.");
-    Serial.print("Session present: ");
-    Serial.println(sessionPresent);
-  #endif
-}
-
-void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Disconnected from MQTT.");
-  #endif
-  mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
-  notifyClients(getOutputStates()); // Aktualizuj stavy webu
-  if (WiFi.isConnected()) {
-    mqttReconnectTimer.once(2, connectToMqtt);
-  }
-}
-
-void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,AwsEventType type,
-             void *arg, uint8_t *data, size_t len) {
-  switch (type) {
-    case WS_EVT_CONNECT:
-      //Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-      break;
-    case WS_EVT_DISCONNECT:
-      //Serial.printf("WebSocket client #%u disconnected\n", client->id());
-      break;
-    case WS_EVT_DATA:
-      //handleWebSocketMessage(arg, data, len);
-      break;
-    case WS_EVT_PONG:
-    case WS_EVT_ERROR:
-      break;
-  }
-}
-
-void initWebSocket() {
-  ws.onEvent(onEvent);
-  server.addHandler(&ws);
-}
-
+/**
+ * Nacti hodnotu a posli ji na server. Spousteno periodicky z Taskeru.
+ */
 void taskReadDHT() {
   //Nacitaj udaje z DHT
   humidity = dht.readHumidity();    // Načítanie vlhkosti
   temperature = dht.readTemperature(); // Načítanie teploty v °C
-
-  #if SERIAL_PORT_ENABLED
-  // Výstup na sériový port
-    static char temperatureTemp[7];
-    dtostrf(temperature, 6, 2, temperatureTemp);
-    static char humidityTemp[7];
-    dtostrf(humidity, 6, 2, humidityTemp);                           
-    Serial.printf("Teplota: %s°C \n", temperatureTemp);
-    Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
-  #endif
 
   if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
     #if SERIAL_PORT_ENABLED
@@ -174,57 +74,133 @@ void taskReadDHT() {
     #endif
     return;
   }
-
-  // Publikácia načítaných hodnôt 
-  mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
-  mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
-  notifyClients(getOutputStates());       // Updatuj web
+  
+  ra->postData( ch1, 1, humidity );
+  ra->postData( ch2, 1, temperature );
 }
+
+
+
+/*
+ * Pokud user code oznaci posledni poslana data znackou 
+ *    ra->setAllDataPreparedFlag();
+ * automaticky se zavola, jakmile jsou vsechna data odeslana.
+ * 
+ * Typicke pouziti je ve scenari, kdy chceme po probuzeni odeslat balik dat a zase zarizeni uspat.
+ * 
+ * Pro pripad, ze se odeslani z nejakeho duvodu nezdari, doporucuji do setup() pridat zhruba toto:
+ *    tasker.setTimeout( raAllWasSent, 60000 );
+ * s nastavenym maximalnim casem, jak dlouho muze byt zarizeni probuzeno (zde 60 sec).
+ * Tim se zajisti, ze dojde k deep sleepu i v pripade, ze z nejakeho duvodu nejde data odeslat.
+ */
+void raAllWasSent()
+{
+  // v teto aplikaci se nepouziva
+}
+
+
+/**
+ * Vraci jmeno aplikace do alokovaneho bufferu.
+ * Jmeno aplikace by nemelo obsahovat strednik.
+ */
+void raGetAppName( char * target, int size )
+{
+  snprintf( target, size, "%s, %s %s", 
+            __FILE__, __DATE__, __TIME__ 
+            );  
+  target[size-1] = 0;
+}
+
 
 void setup() {
+  //+++++ RatatoskrIoT +++++
+    // Mel by byt jako prvni v setup().
+    // Pokud je parametr true, zapne Serial pro rychlost 115200. Jinak musi byt Serial zapnuty uz drive, nez je tohle zavolano.
+    ratatoskr_startup( true );
+  //----- RatatoskrIoT ----
 
+  //++++++ user code here +++++
   dht.begin();
+
+  // nadefinujeme kanal
+  ch1 = ra->defineChannel( DEVCLASS_CONTINUOUS_MINMAXAVG, 2, "humidity", 3600 );
+  ch2 = ra->defineChannel( DEVCLASS_CONTINUOUS_MINMAXAVG, 1, "temperature", 3600 );
+
+  // nastavime spousteni mereni jednou za minutu
+  tasker.setInterval( taskReadDHT, 60000 );
+
+  // nacteme jednou hodnotu, aby se prvni nacetla hned a ne az za 60 sekund
+  taskReadDHT();
   
-  initLittleFS();
-  initWebSocket();
-
-  #if SERIAL_PORT_ENABLED
-    Serial.begin(115200);
-  #endif
-
-  wifiConnectHandler = WiFi.onStationModeGotIP(onWifiConnect);
-  wifiDisconnectHandler = WiFi.onStationModeDisconnected(onWifiDisconnect);
-  
-  mqttClient.onConnect(onMqttConnect);
-  mqttClient.onDisconnect(onMqttDisconnect);
-  
-  mqttClient.setServer(MQTT_HOST, MQTT_PORT);
-  mqttClient.setCredentials(MQTT_USER, MQTT_PASSWORD);
-  connectToWifi();
-
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
-    request->send(LittleFS, "/index.html", "text/html",false);
-  });
-
-  server.serveStatic("/", LittleFS, "/");
-
-  AsyncElegantOTA.begin(&server, OTA_USER, OTA_PASSWORD); // Štart ElegantOTA s autentifikáciou https://github.com/ayushsharma82/AsyncElegantOTA
-  server.begin();                                         // Start server
-
-  #if SERIAL_PORT_ENABLED
-    Serial.println("HTTP server started");
-  #endif
-
-  // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
-  tasker.setInterval(taskReadDHT, PUBLISH_TIME);
-
-  notifyClients(getOutputStates());       // Updatuj web
+  //------ user code here -----
 }
 
+
 void loop() {
+  //+++++ RatatoskrIoT +++++
+    // do scheduled tasks
+    tasker.loop();
+  //----- RatatoskrIoT ----
 
-  ws.cleanupClients();
+  //++++++ user code here +++++
+  //------ user code here ------
+}
 
-  tasker.loop();
 
+//------------------------------------ callbacks from WiFi +++
+
+
+void wifiStatus_StartingConfigPortal(  char * apName, char *apPassword, char * ipAddress   )
+{
+  // +++ user code here +++
+    logger->log( "Starting AP [%s], password [%s]. Server IP [%s].", apName, apPassword, ipAddress );
+  // --- user code here ---
+}
+
+void wifiStatus_Connected(  int status, int waitTime, char * ipAddress  )
+{
+  // +++ user code here +++
+  logger->log("* wifi [%s], %d dBm, %d s", ipAddress, WiFi.RSSI(), waitTime );
+  // --- user code here ---
+}
+
+void wifiStatus_NotConnected( int status, long msecNoConnTime )
+{
+  // +++ user code here +++
+    char desc[32];
+    getWifiStatusText( status, desc );
+    logger->log("* no wifi (%s), %d s", desc, (msecNoConnTime / 1000L) );
+  // --- user code here ---
+}
+
+void wifiStatus_Starting()
+{
+  // +++ user code here +++
+  // --- user code here ---
+}
+
+/**
+   Je zavolano pri startu.
+   - Pokud vrati TRUE, startuje se config portal.
+   - Pokud FALSE, pripojuje se wifi.
+   Pokud nejsou v poradku konfiguracni data, otevira se rovnou config portal a tato funkce se nezavola.
+*/
+bool wifiStatus_ShouldStartConfig()
+{
+  // +++ user code here +++
+    pinMode(CONFIG_BUTTON, INPUT_PULLUP);
+
+    // Pokud se pouziva FLASH button na NodeMCU, je treba zde dat pauzu, 
+    // aby ho uzivatel stihl zmacknout (protoze ho nemuze drzet pri resetu),
+    // jinak je mozne usporit cas a energii tim, ze se rovnou pojede.
+    logger->log( "Sepni pin %d pro config portal", CONFIG_BUTTON );
+    delay(3000);
+
+    if ( digitalRead(CONFIG_BUTTON) == CONFIG_BUTTON_START_CONFIG ) {
+      logger->log( "Budu spoustet config portal!" );
+      return true;
+    } else {
+      return false;
+    }
+  // --- user code here ---
 }
