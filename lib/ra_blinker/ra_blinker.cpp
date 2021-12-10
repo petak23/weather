@@ -2,7 +2,10 @@
 #include <Ticker.h>
 #include "ra_blinker.h"
 
-raBlinker::raBlinker( int pin ) : pin(pin) {}
+raBlinker::raBlinker( int pin ) : pin(pin) {
+  pinMode(this->pin, OUTPUT);
+  digitalWrite( this->pin, BLINKER_LED_OFF );
+}
 
 void raBlinker::changeState() {
 

@@ -2,6 +2,18 @@
 #define RA_BLINKER_H
 
 /**
+ *
+ * Prevzaté z: https://github.com/petrbrouzda/RatatoskrIoT a upravené pre PlatformIO
+ * 
+ * Posledná zmena(Last change): 10.12.2021
+ * 
+ * @authors Petr Brouzda <petr.brouzda@gmail.com>; Ing. Peter VOJTECH ml. <petak23@gmail.com>
+ * @copyright  Copyright (c) 2016 - 2021 Petr Brouzda, Ing. Peter VOJTECH ml.
+ * @license Apache License 2.0
+ * @link       http://petak23.echo-msz.eu
+ * @version 1.0.1
+ *
+ *
  * raBlinker - zajistuje blikani LEDkou
  * 
  * Zalozim si objekt
@@ -38,7 +50,7 @@
 /** (pokud je USE_BLINKER) pin, na kterem je stavova LED (muzete zadat LED_BUILTIN, pokud to na vasem zarizeni funguje) */
 #define BLINKER_PIN 2
 /** (pokud je USE_BLINKER) kdy je LED vypnuta? (ESP32 - nejcasteji LOW, ESP8266 - nejcasteji HIGH ) */
-#define BLINKER_LED_OFF LOW
+#define BLINKER_LED_OFF HIGH
 /** (pokud je USE_BLINKER) je-li definovano, blika se jen pro konfiguracni portal a pro situaci, kdy je zaple wifi ale neni pripojene k AP */
 // #define BLINKER_LOW_POWER
 /** (pokud je USE_BLINKER) je-li definovano, blika se jen pro konfiguracni portal */
