@@ -1,5 +1,4 @@
 #include <Arduino.h>
-#include <Blinker.h>
 #include <ESP8266WiFi.h>
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
@@ -9,6 +8,7 @@
 #include <WiFiClient.h>
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
+#include "ra_blinker.h"
 #include "DHT.h"
 #include "Tasker.h"
 #include "definitions.h"
@@ -41,6 +41,15 @@ AsyncWebServer server(80);
 DHT dht(DHTPIN, DHTTYPE);
 
 Tasker tasker;
+
+#ifdef USE_BLINKER
+  raBlinker blinker( BLINKER_PIN );
+  int blinkerPortal[] = BLINKER_MODE_PORTAL;
+  int blinkerSearching[]  = BLINKER_MODE_SEARCHING;
+  int blinkerRunning[] = BLINKER_MODE_RUNNING;
+  int blinkerRunningWifi[] = BLINKER_MODE_RUNNING_WIFI;
+  int blonkerPublishMQTT[] = { 500, 500, 500, 10, -1 };
+#endif
 
 // Initialize LittleFS
 void initLittleFS() {
@@ -178,6 +187,7 @@ void taskReadDHT() {
   // Publikácia načítaných hodnôt 
   mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
   mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
+  blinker.setCode( blonkerPublishMQTT );
   notifyClients(getOutputStates());       // Updatuj web
 }
 
@@ -218,7 +228,7 @@ void setup() {
   // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
   tasker.setInterval(taskReadDHT, PUBLISH_TIME);
 
-  notifyClients(getOutputStates());       // Updatuj web
+  taskReadDHT();       // Updatuj web
 }
 
 void loop() {
