@@ -16,12 +16,12 @@
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 06.12.2021
+ * Posledná zmena(last change): 10.12.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.0.4
+ * @version 1.1.3
  */
 
 AsyncMqttClient mqttClient;
@@ -143,10 +143,15 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,AwsEventType t
              void *arg, uint8_t *data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
-      //Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      #if SERIAL_PORT_ENABLED
+        Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
+      #endif
+      notifyClients(getOutputStates());       // Updatuj web
       break;
     case WS_EVT_DISCONNECT:
-      //Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      #if SERIAL_PORT_ENABLED
+        Serial.printf("WebSocket client #%u disconnected\n", client->id());
+      #endif
       break;
     case WS_EVT_DATA:
       //handleWebSocketMessage(arg, data, len);
