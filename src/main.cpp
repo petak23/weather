@@ -8,6 +8,9 @@
 #include <WiFiClient.h>
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
+#include <SimpleTime.h>
+#include <NTPClient.h>
+#include <WiFiUdp.h>
 #include "ra_blinker.h"
 #include "DHT.h"
 #include "Tasker.h"
@@ -21,7 +24,7 @@
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.3
+ * @version 1.1.4
  */
 
 AsyncMqttClient mqttClient;
@@ -51,6 +54,9 @@ Tasker tasker;
   int blonkerPublishMQTT[] = { 500, 500, 500, 10, -1 };
 #endif
 
+WiFiUDP ntpUDP;
+NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+
 // Initialize LittleFS
 void initLittleFS() {
   
@@ -65,7 +71,7 @@ void initLittleFS() {
 }
 
 // Create a WebSocket object
-AsyncWebSocket ws("/ws");
+AsyncWebSocket webs("/ws");
 
 String getOutputStates(){
   JSONVar myArray;
@@ -84,7 +90,7 @@ String getOutputStates(){
 }
 
 void notifyClients(String state) {
-  ws.textAll(state);
+  webs.textAll(state);
 }
 
 void connectToWifi() {
@@ -163,8 +169,8 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,AwsEventType t
 }
 
 void initWebSocket() {
-  ws.onEvent(onEvent);
-  server.addHandler(&ws);
+  webs.onEvent(onEvent);
+  server.addHandler(&webs);
 }
 
 void taskReadDHT() {
@@ -177,9 +183,12 @@ void taskReadDHT() {
     static char temperatureTemp[7];
     dtostrf(temperature, 6, 2, temperatureTemp);
     static char humidityTemp[7];
-    dtostrf(humidity, 6, 2, humidityTemp);                           
-    Serial.printf("Teplota: %s°C \n", temperatureTemp);
-    Serial.printf("Vlhkosť: %s%% \n", humidityTemp);
+    dtostrf(humidity, 6, 2, humidityTemp);
+    time_t utcCalc = timeClient.getEpochTime();                           
+    Serial.print(timeClient.getFormattedTime());
+    Serial.printf(" DAY: %u (%lu)[%u.%u.%u]", timeClient.getDay(), timeClient.getEpochTime(),  day(utcCalc), month(utcCalc), year(utcCalc));
+    Serial.printf(" Teplota: %s°C | Vlhkosť: %s%% \n", temperatureTemp, humidityTemp);
+    
   #endif
 
   if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
@@ -224,7 +233,9 @@ void setup() {
   server.serveStatic("/", LittleFS, "/");
 
   AsyncElegantOTA.begin(&server, OTA_USER, OTA_PASSWORD); // Štart ElegantOTA s autentifikáciou https://github.com/ayushsharma82/AsyncElegantOTA
-  server.begin();                                         // Start server
+  server.begin();  // Start server
+  
+  timeClient.begin();                                       
 
   #if SERIAL_PORT_ENABLED
     Serial.println("HTTP server started");
@@ -238,8 +249,10 @@ void setup() {
 
 void loop() {
 
-  ws.cleanupClients();
+  webs.cleanupClients();
 
   tasker.loop();
+
+  timeClient.update();
 
 }
