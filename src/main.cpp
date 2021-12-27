@@ -19,12 +19,12 @@
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 10.12.2021
+ * Posledná zmena(last change): 26.12.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.4
+ * @version 1.1.5
  */
 
 AsyncMqttClient mqttClient;
@@ -47,15 +47,16 @@ Tasker tasker;
 
 #ifdef USE_BLINKER
   raBlinker blinker( BLINKER_PIN );
-  int blinkerPortal[] = BLINKER_MODE_PORTAL;
+  /*int blinkerPortal[] = BLINKER_MODE_PORTAL;
   int blinkerSearching[]  = BLINKER_MODE_SEARCHING;
   int blinkerRunning[] = BLINKER_MODE_RUNNING;
-  int blinkerRunningWifi[] = BLINKER_MODE_RUNNING_WIFI;
-  int blonkerPublishMQTT[] = { 500, 500, 500, 10, -1 };
+  int blinkerRunningWifi[] = BLINKER_MODE_RUNNING_WIFI;*/
+  int blinkerPublishMQTT[] = { 50, 250, 200, 250, -1 };
 #endif
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
+time_t utcCalc = 0;
 
 // Initialize LittleFS
 void initLittleFS() {
@@ -84,6 +85,7 @@ String getOutputStates(){
 
   myArray["humidity"] = humidityTemp;
   myArray["temperature"] = temperatureTemp;
+  myArray["out_time"] = printf("Poslené meranie: %u.%u.%u %u:%u:%u", day(utcCalc), month(utcCalc), year(utcCalc), hour(utcCalc), minute(utcCalc), second(utcCalc));
 
   String jsonString = JSON.stringify(myArray);
   return jsonString;
@@ -177,6 +179,7 @@ void taskReadDHT() {
   //Nacitaj udaje z DHT
   humidity = dht.readHumidity();    // Načítanie vlhkosti
   temperature = dht.readTemperature(); // Načítanie teploty v °C
+  utcCalc = timeClient.getEpochTime();
 
   #if SERIAL_PORT_ENABLED
   // Výstup na sériový port
@@ -184,7 +187,6 @@ void taskReadDHT() {
     dtostrf(temperature, 6, 2, temperatureTemp);
     static char humidityTemp[7];
     dtostrf(humidity, 6, 2, humidityTemp);
-    time_t utcCalc = timeClient.getEpochTime();                           
     Serial.print(timeClient.getFormattedTime());
     Serial.printf(" DAY: %u (%lu)[%u.%u.%u]", timeClient.getDay(), timeClient.getEpochTime(),  day(utcCalc), month(utcCalc), year(utcCalc));
     Serial.printf(" Teplota: %s°C | Vlhkosť: %s%% \n", temperatureTemp, humidityTemp);
@@ -201,7 +203,7 @@ void taskReadDHT() {
   // Publikácia načítaných hodnôt 
   mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
   mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
-  blinker.setCode( blonkerPublishMQTT );
+  blinker.setCode( blinkerPublishMQTT );
   notifyClients(getOutputStates());       // Updatuj web
 }
 
@@ -221,9 +223,9 @@ void setup() {
   
   mqttClient.onConnect(onMqttConnect);
   mqttClient.onDisconnect(onMqttDisconnect);
-  
   mqttClient.setServer(MQTT_HOST, MQTT_PORT);
   mqttClient.setCredentials(MQTT_USER, MQTT_PASSWORD);
+
   connectToWifi();
 
   server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){

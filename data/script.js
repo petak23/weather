@@ -40,4 +40,6 @@ function onMessage(event) {
 
   document.getElementById("temperature").innerHTML = myObj.temperature;
   document.getElementById("humidity").innerHTML = myObj.humidity;
+  document.getElementById("out_time").innerHTML = myObj.out_time;
+
 }
