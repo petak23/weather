@@ -19,12 +19,12 @@
 /* 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 26.12.2021
+ * Posledná zmena(last change): 27.12.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.5
+ * @version 1.1.6
  */
 
 AsyncMqttClient mqttClient;
@@ -83,9 +83,11 @@ String getOutputStates(){
   static char humidityTemp[7];
   dtostrf(humidity, 6, 2, humidityTemp);                           
 
+  utcCalc = timeClient.getEpochTime();
   myArray["humidity"] = humidityTemp;
   myArray["temperature"] = temperatureTemp;
-  myArray["out_time"] = printf("Poslené meranie: %u.%u.%u %u:%u:%u", day(utcCalc), month(utcCalc), year(utcCalc), hour(utcCalc), minute(utcCalc), second(utcCalc));
+  myArray["out_time"] = "Poslené meranie: "+String(day(utcCalc))+"."+String(month(utcCalc))+"."+String(year(utcCalc))+" "+String(hour(utcCalc))+":"+String(minute(utcCalc))+":"+String(second(utcCalc));
+  myArray["logbook"] = " EpochTime: "+String(timeClient.getEpochTime());
 
   String jsonString = JSON.stringify(myArray);
   return jsonString;
@@ -93,6 +95,13 @@ String getOutputStates(){
 
 void notifyClients(String state) {
   webs.textAll(state);
+}
+
+void log(String logMessage) {
+  JSONVar myArray;
+  utcCalc = timeClient.getEpochTime();
+  myArray["logbook"] = String(timeClient.getEpochTime())+" -> "+logMessage;
+  webs.textAll(JSON.stringify(myArray));
 }
 
 void connectToWifi() {
@@ -106,6 +115,7 @@ void connectToMqtt() {
   #if SERIAL_PORT_ENABLED
     Serial.println("Connecting to MQTT...");
   #endif
+  log("Connecting to MQTT...");
   mqttClient.connect();
 }
 
@@ -129,6 +139,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
 void onMqttConnect(bool sessionPresent) {
   mqtt_state = 1;                   // Nastav príznak MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
+  log("Connected to MQTT.");
   #if SERIAL_PORT_ENABLED
     Serial.println("Connected to MQTT.");
     Serial.print("Session present: ");
@@ -140,6 +151,7 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   #if SERIAL_PORT_ENABLED
     Serial.println("Disconnected from MQTT.");
   #endif
+  log("Disconnected from MQTT.");
   mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
   if (WiFi.isConnected()) {
@@ -197,6 +209,7 @@ void taskReadDHT() {
     #if SERIAL_PORT_ENABLED
       Serial.println("Failed to read from DHT sensor!");
     #endif
+    log("Chyba načítania údajov z DHT senzora.");
     return;
   }
 
