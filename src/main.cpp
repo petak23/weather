@@ -8,23 +8,23 @@
 #include <WiFiClient.h>
 #include <Ticker.h>
 #include <AsyncMqttClient.h>
-#include <SimpleTime.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
 #include "ra_blinker.h"
+#include "pv_simpletime.h"
 #include "DHT.h"
 #include "Tasker.h"
 #include "definitions.h"
 
-/* 
+/** 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 27.12.2021
+ * Posledná zmena(last change): 28.12.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.6
+ * @version 1.1.7
  */
 
 AsyncMqttClient mqttClient;
@@ -56,7 +56,7 @@ Tasker tasker;
 
 WiFiUDP ntpUDP;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 3600, 60000);
-time_t utcCalc = 0;
+pvSimpletime pvst;
 
 // Initialize LittleFS
 void initLittleFS() {
@@ -83,11 +83,11 @@ String getOutputStates(){
   static char humidityTemp[7];
   dtostrf(humidity, 6, 2, humidityTemp);                           
 
-  utcCalc = timeClient.getEpochTime();
+  pvst.setTime(timeClient.getEpochTime());
   myArray["humidity"] = humidityTemp;
   myArray["temperature"] = temperatureTemp;
-  myArray["out_time"] = "Poslené meranie: "+String(day(utcCalc))+"."+String(month(utcCalc))+"."+String(year(utcCalc))+" "+String(hour(utcCalc))+":"+String(minute(utcCalc))+":"+String(second(utcCalc));
-  myArray["logbook"] = " EpochTime: "+String(timeClient.getEpochTime());
+  myArray["out_time"] = "Poslené meranie: " + pvst.getFormDT();
+  myArray["logbook"] = "Poslené meranie: " + pvst.getFormDT();
 
   String jsonString = JSON.stringify(myArray);
   return jsonString;
@@ -99,8 +99,8 @@ void notifyClients(String state) {
 
 void log(String logMessage) {
   JSONVar myArray;
-  utcCalc = timeClient.getEpochTime();
-  myArray["logbook"] = String(timeClient.getEpochTime())+" -> "+logMessage;
+  pvst.setTime(timeClient.getEpochTime());
+  myArray["logbook"] = pvst.getFormDT() + " -> " + logMessage;
   webs.textAll(JSON.stringify(myArray));
 }
 
@@ -191,7 +191,7 @@ void taskReadDHT() {
   //Nacitaj udaje z DHT
   humidity = dht.readHumidity();    // Načítanie vlhkosti
   temperature = dht.readTemperature(); // Načítanie teploty v °C
-  utcCalc = timeClient.getEpochTime();
+  
 
   #if SERIAL_PORT_ENABLED
   // Výstup na sériový port
@@ -200,7 +200,9 @@ void taskReadDHT() {
     static char humidityTemp[7];
     dtostrf(humidity, 6, 2, humidityTemp);
     Serial.print(timeClient.getFormattedTime());
-    Serial.printf(" DAY: %u (%lu)[%u.%u.%u]", timeClient.getDay(), timeClient.getEpochTime(),  day(utcCalc), month(utcCalc), year(utcCalc));
+    pvst.setTime(timeClient.getEpochTime());
+    myArray["logbook"] = pvst.getFormDT(); 
+    Serial.print(pvst.getFormDT());
     Serial.printf(" Teplota: %s°C | Vlhkosť: %s%% \n", temperatureTemp, humidityTemp);
     
   #endif
