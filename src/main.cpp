@@ -19,12 +19,12 @@
 /** 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 28.12.2021
+ * Posledná zmena(last change): 29.12.2021
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.7
+ * @version 1.1.8
  */
 
 AsyncMqttClient mqttClient;
@@ -47,10 +47,6 @@ Tasker tasker;
 
 #ifdef USE_BLINKER
   raBlinker blinker( BLINKER_PIN );
-  /*int blinkerPortal[] = BLINKER_MODE_PORTAL;
-  int blinkerSearching[]  = BLINKER_MODE_SEARCHING;
-  int blinkerRunning[] = BLINKER_MODE_RUNNING;
-  int blinkerRunningWifi[] = BLINKER_MODE_RUNNING_WIFI;*/
   int blinkerPublishMQTT[] = { 50, 250, 200, 250, -1 };
 #endif
 
@@ -98,10 +94,15 @@ void notifyClients(String state) {
 }
 
 void log(String logMessage) {
-  JSONVar myArray;
   pvst.setTime(timeClient.getEpochTime());
-  myArray["logbook"] = pvst.getFormDT() + " -> " + logMessage;
-  webs.textAll(JSON.stringify(myArray));
+  String tmp = pvst.getFormDT() + " -> " + logMessage;
+  #if SERIAL_PORT_ENABLED
+    Serial.println(tmp);
+  #else
+    JSONVar myArray;
+    myArray["logbook"] = tmp;
+    webs.textAll(JSON.stringify(myArray));
+  #endif
 }
 
 void connectToWifi() {
@@ -112,9 +113,6 @@ void connectToWifi() {
 }
 
 void connectToMqtt() {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connecting to MQTT...");
-  #endif
   log("Connecting to MQTT...");
   mqttClient.connect();
 }
@@ -140,17 +138,9 @@ void onMqttConnect(bool sessionPresent) {
   mqtt_state = 1;                   // Nastav príznak MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
   log("Connected to MQTT.");
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Connected to MQTT.");
-    Serial.print("Session present: ");
-    Serial.println(sessionPresent);
-  #endif
 }
 
 void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
-  #if SERIAL_PORT_ENABLED
-    Serial.println("Disconnected from MQTT.");
-  #endif
   log("Disconnected from MQTT.");
   mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
@@ -163,9 +153,7 @@ void onEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,AwsEventType t
              void *arg, uint8_t *data, size_t len) {
   switch (type) {
     case WS_EVT_CONNECT:
-      #if SERIAL_PORT_ENABLED
-        Serial.printf("WebSocket client #%u connected from %s\n", client->id(), client->remoteIP().toString().c_str());
-      #endif
+      log("WebSocket client #" + String(client->id()) + " connected from: " + client->remoteIP().toString().c_str());
       notifyClients(getOutputStates());       // Updatuj web
       break;
     case WS_EVT_DISCONNECT:
@@ -208,9 +196,6 @@ void taskReadDHT() {
   #endif
 
   if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
-    #if SERIAL_PORT_ENABLED
-      Serial.println("Failed to read from DHT sensor!");
-    #endif
     log("Chyba načítania údajov z DHT senzora.");
     return;
   }
@@ -254,9 +239,7 @@ void setup() {
   
   timeClient.begin();                                       
 
-  #if SERIAL_PORT_ENABLED
-    Serial.println("HTTP server started");
-  #endif
+  log("HTTP server started");
 
   // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
   tasker.setInterval(taskReadDHT, PUBLISH_TIME);
