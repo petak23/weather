@@ -6,7 +6,7 @@
 #include "LittleFS.h"
 #include <Arduino_JSON.h>
 #include <WiFiClient.h>
-#include <Ticker.h>
+// #include <Ticker.h>
 #include <AsyncMqttClient.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
@@ -19,20 +19,20 @@
 /** 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 29.12.2021
+ * Posledná zmena(last change): 03.01.2022
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
- * @copyright  Copyright (c) 2016 - 2021 Ing. Peter VOJTECH ml.
+ * @copyright  Copyright (c) 2016 - 2022 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.8
+ * @version 1.1.9
  */
 
 AsyncMqttClient mqttClient;
-Ticker mqttReconnectTimer;
+// Ticker mqttReconnectTimer;
 
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
-Ticker wifiReconnectTimer;
+// Ticker wifiReconnectTimer;
 
 int mqtt_state = 0;          // Stav MQTT pripojenia podľa https://pubsubclient.knolleary.net/api#state
 float humidity = 0;
@@ -43,6 +43,7 @@ AsyncWebServer server(80);
 // Initialize DHT sensor.
 DHT dht(DHTPIN, DHTTYPE);
 
+#define TASKER_MAX_TASKS 4
 Tasker tasker;
 
 #ifdef USE_BLINKER
@@ -130,8 +131,10 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
   #if SERIAL_PORT_ENABLED
     Serial.println("Disconnected from Wi-Fi.");
   #endif
-  mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-  wifiReconnectTimer.once(2, connectToWifi);
+  // mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
+  // wifiReconnectTimer.once(2, connectToWifi);
+  tasker.setTimeout(connectToWifi, 2000);
+  tasker.clearTimeout(connectToMqtt); // Ak nemám wifi, tak sa nepripájam ani na MQTT
 }
 
 void onMqttConnect(bool sessionPresent) {
@@ -145,7 +148,8 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
   if (WiFi.isConnected()) {
-    mqttReconnectTimer.once(2, connectToMqtt);
+    // mqttReconnectTimer.once(2, connectToMqtt);
+    tasker.setTimeout(connectToMqtt, 2000);
   }
 }
 
@@ -179,21 +183,6 @@ void taskReadDHT() {
   //Nacitaj udaje z DHT
   humidity = dht.readHumidity();    // Načítanie vlhkosti
   temperature = dht.readTemperature(); // Načítanie teploty v °C
-  
-
-  #if SERIAL_PORT_ENABLED
-  // Výstup na sériový port
-    static char temperatureTemp[7];
-    dtostrf(temperature, 6, 2, temperatureTemp);
-    static char humidityTemp[7];
-    dtostrf(humidity, 6, 2, humidityTemp);
-    Serial.print(timeClient.getFormattedTime());
-    pvst.setTime(timeClient.getEpochTime());
-    myArray["logbook"] = pvst.getFormDT(); 
-    Serial.print(pvst.getFormDT());
-    Serial.printf(" Teplota: %s°C | Vlhkosť: %s%% \n", temperatureTemp, humidityTemp);
-    
-  #endif
 
   if (isnan(humidity) || isnan(temperature)) { // Kontrola načítania dát zo senzora
     log("Chyba načítania údajov z DHT senzora.");
