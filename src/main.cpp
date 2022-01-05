@@ -6,7 +6,6 @@
 #include "LittleFS.h"
 #include <Arduino_JSON.h>
 #include <WiFiClient.h>
-// #include <Ticker.h>
 #include <AsyncMqttClient.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
@@ -19,31 +18,32 @@
 /** 
  * Program pre meteorologickú stanicu pomocou ESP8266 a MQTT pre IoT
  *
- * Posledná zmena(last change): 03.01.2022
+ * Posledná zmena(last change): 05.01.2022
  * @author Ing. Peter VOJTECH ml. <petak23@gmail.com>
  * @copyright  Copyright (c) 2016 - 2022 Ing. Peter VOJTECH ml.
  * @license
  * @link       http://petak23.echo-msz.eu
- * @version 1.1.9
+ * @version 1.2.0
  */
 
 AsyncMqttClient mqttClient;
-// Ticker mqttReconnectTimer;
 
 WiFiEventHandler wifiConnectHandler;
 WiFiEventHandler wifiDisconnectHandler;
-// Ticker wifiReconnectTimer;
 
 int mqtt_state = 0;          // Stav MQTT pripojenia podľa https://pubsubclient.knolleary.net/api#state
 float humidity = 0;
 float temperature = 0;
+
+boolean timeNTPwait = false;
+boolean firstRun = true;
 
 AsyncWebServer server(80);
 
 // Initialize DHT sensor.
 DHT dht(DHTPIN, DHTTYPE);
 
-#define TASKER_MAX_TASKS 4
+// Inicialize Tasker
 Tasker tasker;
 
 #ifdef USE_BLINKER
@@ -75,16 +75,16 @@ String getOutputStates(){
   JSONVar myArray;
   myArray["mqtt"] = String(mqtt_state);
   
-  static char temperatureTemp[7];
-  dtostrf(temperature, 6, 2, temperatureTemp);
-  static char humidityTemp[7];
-  dtostrf(humidity, 6, 2, humidityTemp);                           
+  static char tTemp[7];
+  dtostrf(temperature, 6, 2, tTemp);
+  static char hTemp[7];
+  dtostrf(humidity, 6, 2, hTemp);                           
 
   pvst.setTime(timeClient.getEpochTime());
-  myArray["humidity"] = humidityTemp;
-  myArray["temperature"] = temperatureTemp;
+  myArray["humidity"] = hTemp;
+  myArray["temperature"] = tTemp;
   myArray["out_time"] = "Poslené meranie: " + pvst.getFormDT();
-  myArray["logbook"] = "Poslené meranie: " + pvst.getFormDT();
+  myArray["logbook"] = "Poslené meranie: " + pvst.getFormDT() + " T: " + String(tTemp) + "°C; V: " + String(hTemp) + "%";
 
   String jsonString = JSON.stringify(myArray);
   return jsonString;
@@ -131,9 +131,7 @@ void onWifiDisconnect(const WiFiEventStationModeDisconnected& event) {
   #if SERIAL_PORT_ENABLED
     Serial.println("Disconnected from Wi-Fi.");
   #endif
-  // mqttReconnectTimer.detach(); // ensure we don't reconnect to MQTT while reconnecting to Wi-Fi
-  // wifiReconnectTimer.once(2, connectToWifi);
-  tasker.setTimeout(connectToWifi, 2000);
+  tasker.setTimeout(connectToWifi, 2000); // Opakovaný pokus o pripojenie za 2s
   tasker.clearTimeout(connectToMqtt); // Ak nemám wifi, tak sa nepripájam ani na MQTT
 }
 
@@ -148,8 +146,7 @@ void onMqttDisconnect(AsyncMqttClientDisconnectReason reason) {
   mqtt_state = 0;                   // Nastav príznak chýbajúceho MQTT spojenia
   notifyClients(getOutputStates()); // Aktualizuj stavy webu
   if (WiFi.isConnected()) {
-    // mqttReconnectTimer.once(2, connectToMqtt);
-    tasker.setTimeout(connectToMqtt, 2000);
+    tasker.setTimeout(connectToMqtt, 5000); // Opakovaný pokus o pripojenie MQTT o 5s
   }
 }
 
@@ -179,7 +176,7 @@ void initWebSocket() {
   server.addHandler(&webs);
 }
 
-void taskReadDHT() {
+void readDHT(boolean publishmqtt = true) {
   //Nacitaj udaje z DHT
   humidity = dht.readHumidity();    // Načítanie vlhkosti
   temperature = dht.readTemperature(); // Načítanie teploty v °C
@@ -188,12 +185,49 @@ void taskReadDHT() {
     log("Chyba načítania údajov z DHT senzora.");
     return;
   }
+  notifyClients(getOutputStates());       // Updatuj web
+}
+
+void taskReadDHT() {
+  readDHT();
 
   // Publikácia načítaných hodnôt 
   mqttClient.publish(topic_temperature, 0, true, String(temperature).c_str());
   mqttClient.publish(topic_humidity, 0, true, String(humidity).c_str()); 
   blinker.setCode( blinkerPublishMQTT );
-  notifyClients(getOutputStates());       // Updatuj web
+}
+
+void firstPublish() {
+  log("Prvé plánované meranie");
+  taskReadDHT();
+  // Publikovanie nových hodnôt od teraz každých PUBLISH_TIME min.
+  tasker.setInterval(taskReadDHT, (PUBLISH_TIME * 60000));
+}
+
+void readNTP() {
+  time_t timeNTP = timeClient.getEpochTime();
+  if (timeNTP > 10000) {
+    log("Úspešné načítanie serverového času. Aktuálny: " + String(timeNTP));
+    int put = PUBLISH_TIME;
+    int min = minute(timeNTP);
+    int sec = 60 - second(timeNTP);                   // Sekundy do celej minúty
+    int min_to_publish = put - (min % put) - 1;       // Celé minúty do najbližšej publikácie
+    long sec_to_publish = min_to_publish * 60 + sec;  // Sekundy do najbližšej publikácie
+    log("put="+String(put)+" | min="+String(min)+" | sec="+String(sec)+" | min_to_publish="+String(min_to_publish));
+    firstRun = false;
+    tasker.setTimeout(firstPublish, (sec_to_publish * 1000));
+    log("Nastavenie najbližšieho merania o "+ String(sec_to_publish) + "s");
+  } else {
+    log("Čakám na serverový čas..." + String(timeNTP));
+    tasker.setTimeout(readNTP, 2000); // Čakanie na serverový čas
+  }
+}
+
+void firstRunFunction() {
+  if (!timeNTPwait) {
+    timeNTPwait = true;
+    tasker.setTimeout(readNTP, 2000); // Čakanie na serverový čas
+  } 
 }
 
 void setup() {
@@ -230,10 +264,7 @@ void setup() {
 
   log("HTTP server started");
 
-  // Publikovanie nových hodnôt sa deje každých PUBLISH_TIME/1000 sec.
-  tasker.setInterval(taskReadDHT, PUBLISH_TIME);
-
-  taskReadDHT();       // Updatuj web
+  readDHT(false);       // Updatuj web
 }
 
 void loop() {
@@ -244,4 +275,7 @@ void loop() {
 
   timeClient.update();
 
+  if (firstRun) {
+    firstRunFunction();
+  }
 }
